@@ -76,7 +76,7 @@ contract CoWHook is BaseHook, ERC1155 {
                 beforeRemoveLiquidity: false,
                 afterRemoveLiquidity: false,
                 beforeSwap: true,
-                afterSwap: true,
+                afterSwap: false,
                 beforeDonate: false,
                 afterDonate: false,
                 beforeSwapReturnDelta: true,
@@ -163,14 +163,14 @@ contract CoWHook is BaseHook, ERC1155 {
         return (this.beforeSwap.selector, beforeSwapDelta, 0);
     }
 
-    function afterSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata) override external returns (bytes4, int128) {
-        //update tick value
+    // function afterSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata) override external returns (bytes4, int128) {
+    //     //update tick value
 
-        //call secret orderbook and check if some of the pending orders are executable
+    //     //call secret orderbook and check if some of the pending orders are executable
 
-        //if the proof is valid execute pending orders
-        return(this.afterSwap.selector, 0);
-    }
+    //     //if the proof is valid execute pending orders
+    //     return(this.afterSwap.selector, 0);
+    // }
 
     function executeCoW(PoolKey calldata poolKey, bool zeroForOne, int24 tick, uint256 blockLimit, uint256 matchedAmount) internal {
         //remember that the hook has the custody over both tokens
@@ -202,38 +202,38 @@ contract CoWHook is BaseHook, ERC1155 {
 
         //return just the matching orders, and read the rest from the storage
 
-        (PoolKey[] memory poolKey, 
-        int24[] memory tick, 
-        bool[] memory zeroForOne, 
-        uint256[] memory blockLimit, 
-        uint256[] memory amount, 
-        uint256[] memory matchedAmount, 
-        bytes memory proof) = abi.decode(callbackData, (PoolKey[], int24[], bool[], uint256[], uint256[], uint256[], bytes));
+        // (PoolKey[] memory poolKey, 
+        // int24[] memory tick, 
+        // bool[] memory zeroForOne, 
+        // uint256[] memory blockLimit, 
+        // uint256[] memory amount, 
+        // uint256[] memory matchedAmount, 
+        // bytes memory proof) = abi.decode(callbackData, (PoolKey[], int24[], bool[], uint256[], uint256[], uint256[], bytes));
         
-        if(poolKey.length != 0 && (poolKey.length != tick.length || poolKey.length == zeroForOne.length || poolKey.length == blockLimit.length || poolKey.length == amount.length)) {
-            revert BadCallbackData();
-        }
+        // if(poolKey.length != 0 && (poolKey.length != tick.length || poolKey.length == zeroForOne.length || poolKey.length == blockLimit.length || poolKey.length == amount.length)) {
+        //     revert BadCallbackData();
+        // }
 
-        //try to execute each position
-        for(uint256 i = 0; i < poolKey.length; i++){
-            if(block.timestamp > blockLimit[i]){
+        // //try to execute each position
+        // for(uint256 i = 0; i < poolKey.length; i++){
+        //     if(block.timestamp > blockLimit[i]){
 
-                // PoolKey calldata newPoolKey = PoolKey({
-                //     currency0: poolKey[i].currency0,
-                //     currency1: poolKey[i].currency1,
-                //     fee: poolKey[i].fee,
-                //     tickSpacing: poolKey[i].tickSpacing,
-                //     hooks: Hooks
-                // });
-                //execute regular AMM swap
-                executeAMMSwap(poolKey[i], tick[i], zeroForOne[i], amount[i], blockLimit[i]);
-            }else{
-                //check if there is a CoW matching order
-                if(matchedAmount[i] != 0){
-                    executeCoW(poolKey[i], zeroForOne[i], tick[i], blockLimit[i], matchedAmount[i]);
-                }
-            }
-        }
+        //         // PoolKey calldata newPoolKey = PoolKey({
+        //         //     currency0: poolKey[i].currency0,
+        //         //     currency1: poolKey[i].currency1,
+        //         //     fee: poolKey[i].fee,
+        //         //     tickSpacing: poolKey[i].tickSpacing,
+        //         //     hooks: Hooks
+        //         // });
+        //         //execute regular AMM swap
+        //         executeAMMSwap(poolKey[i], tick[i], zeroForOne[i], amount[i], blockLimit[i]);
+        //     }else{
+        //         //check if there is a CoW matching order
+        //         if(matchedAmount[i] != 0){
+        //             executeCoW(poolKey[i], zeroForOne[i], tick[i], blockLimit[i], matchedAmount[i]);
+        //         }
+        //     }
+        // }
     }
 
     function swapAndSettleBalances(
