@@ -5,16 +5,26 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
-import {BeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
+import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
 import {ERC1155} from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {FixedPointMathLib} from "solmate/src/utils/FixedPointMathLib.sol";
+import {TickMath} from "v4-core/libraries/TickMath.sol";
 
 contract CoWHook is BaseHook, ERC1155 {
     using PoolIdLibrary for PoolKey;
     using FixedPointMathLib for uint256;
+
+    //events
+    event OrderPlaced(
+        PoolKey key,
+        int24 tickToSellAt, 
+        bool zeroForOne, 
+        uint256 inputAmount, 
+        uint256 blockLimit
+    );
 
     //errors
     error InvalidOrder();
@@ -30,7 +40,7 @@ contract CoWHook is BaseHook, ERC1155 {
         uint256 inputAmount;
     }
 
-    mapping(PoolId poolId => mapping(int24 tickToSellAt => mapping(bool zeroForOne => uint256 inputAmount))) pendingOrders;
+    mapping(PoolId poolId => mapping(int24 tickToSellAt => mapping(bool zeroForOne => mapping(uint256 blockLimit => uint256 inputAmount)))) pendingOrders;
 
     mapping(uint256 positionId => uint256 claimsSupply) public claimTokensSupply;
 
@@ -43,7 +53,7 @@ contract CoWHook is BaseHook, ERC1155 {
         uint256 blockLimit //users specify this value
     ) public pure returns (uint256) {
         return
-            uint256(keccak256(abi.encode(key.toId(), tick, zeroForOne)));
+            uint256(keccak256(abi.encode(key.toId(), tick, zeroForOne, blockLimit)));
     }
 
     constructor(
@@ -84,10 +94,10 @@ contract CoWHook is BaseHook, ERC1155 {
      */
     function placeOrder(PoolKey calldata key, int24 tickToSellAt, bool zeroForOne, uint256 inputAmount, uint256 blockLimit) public returns (int24){
         int24 tick = getLowerUsableTick(tickToSellAt, key.tickSpacing);
-        pendingOrders[key.toId()][tick][zeroForOne] += inputAmount;
+        pendingOrders[key.toId()][tick][zeroForOne][blockLimit] += inputAmount;
 
         //issue claim tokens to the users and account for total claimed tokens
-        uint256 positionId = getPositionId(key, tick, zeroForOne);
+        uint256 positionId = getPositionId(key, tick, zeroForOne, blockLimit);
         claimTokensSupply[positionId] += inputAmount;
         _mint(msg.sender, positionId, inputAmount, "");
 
@@ -95,6 +105,8 @@ contract CoWHook is BaseHook, ERC1155 {
             ? Currency.unwrap(key.currency0)
             : Currency.unwrap(key.currency1);
         IERC20(sellToken).transferFrom(msg.sender, address(this), inputAmount);
+
+        emit OrderPlaced(key, tick, zeroForOne, inputAmount, blockLimit);
 
         return tick;
     }
@@ -105,12 +117,12 @@ contract CoWHook is BaseHook, ERC1155 {
         //3. burn claim tokens
         //4. send tokens back to the user
         int24 tick = getLowerUsableTick(tickToSellAt, key.tickSpacing);
-        uint256 positionId = getPositionId(key, tick, zeroForOne);
+        uint256 positionId = getPositionId(key, tick, zeroForOne, blockLimit);
 
         uint256 positionTokens = balanceOf(msg.sender, positionId);
         if (positionTokens == 0) revert InvalidOrder();
 
-        pendingOrders[key.toId()][tick][zeroForOne] -= positionTokens;
+        pendingOrders[key.toId()][tick][zeroForOne][blockLimit] -= positionTokens;
 
         claimTokensSupply[positionId] -= positionTokens;
         _burn(msg.sender, positionId, positionTokens);
@@ -134,13 +146,16 @@ contract CoWHook is BaseHook, ERC1155 {
     }
 
     //here we will check for CoW and noOp if possible to match orders
-    function beforeSwap(address, PoolKey calldata poolKey, IPoolManager.SwapParams calldata params, bytes calldata data) override external returns (bytes4, BeforeSwapDelta, uint24){
+    function beforeSwap(address sender, PoolKey calldata poolKey, IPoolManager.SwapParams calldata params, bytes calldata data) override external returns (bytes4, BeforeSwapDelta, uint24){
         //this will skip the core logic of the swap, by setting beforeSwapDelta to amountSpecified, which will make swapAmount 0 when added to params.specifiedAmount
-        BeforeSwapDelta beforeSwapDelta = toBeforeSwapDelta(uint128(-params.amountSpecified),int128(params.amountSpecified));
+        BeforeSwapDelta beforeSwapDelta = toBeforeSwapDelta(int128(-params.amountSpecified),int128(params.amountSpecified));
 
+        //preventing reentrancy. Is this needed?
+        if (sender == address(this)) return (this.beforeSwap.selector, beforeSwapDelta, 0);
+        
         //take the custody of the input tokens
 
-        (int24 tickToSellAt, bool zeroForOne, uint256 inputAmount, uint256 blockLimit) = abi.decode(data);
+        (int24 tickToSellAt, bool zeroForOne, uint256 inputAmount, uint256 blockLimit) = abi.decode(data, (int24, bool, uint256, uint256));
         placeOrder(poolKey, tickToSellAt, zeroForOne, inputAmount, blockLimit);
 
         //our server will call the brevis
@@ -157,41 +172,11 @@ contract CoWHook is BaseHook, ERC1155 {
         return(this.afterSwap.selector, 0);
     }
 
-    function brevisCallback(bytes calldata callbackData) external {
-        //should return data about all the positions
-        //we check the order conditions (each order should have specified block number until which CoW can be executed)
-        //for the orders that didn't reach block limit, check if there is a matching order
-        //for the orders that reached block limit, execute them through AMM
-
-        //verify proof, by calling brevis handleProof function
-
-        //return just the matching orders, and read the rest from the storage
-
-        (PoolKey[] poolKey, int24[] tick, bool[] zeroForOne, uint256[] blockLimit, uint256[] amount, uint256[] matchedAmount, bytes memory proof) = abi.decode(callbackData);
-        
-        if(poolKey.length != 0 && (poolKey.length != tick.length || poolKey.length == zeroForOne.length || poolKey.length == blockLimit.length || poolKey.length == amount.length)) {
-            revert BadCallbackData();
-        }
-
-        //try to execute each position
-        for(uint256 i = 0; i < poolKey.lenght; i++){
-            if(block.timestamp > blockLimit){
-                //execute regular AMM swap
-                executeAMMSwap(poolKey[i], tick[i], zeroForOne[i], amount);
-            }else{
-                //check if there is a CoW matching order
-                if(matchedAmount[i] != 0){
-                    executeCow();
-                }
-            }
-        }
-    }
-
-    function executeCow(PoolKey calldata poolKey, bool zeroForOne, int24 tick, uint256 blockLimit, uint256 matchedAmount) external {
+    function executeCoW(PoolKey calldata poolKey, bool zeroForOne, int24 tick, uint256 blockLimit, uint256 matchedAmount) internal {
         //remember that the hook has the custody over both tokens
         
-        address sellToken = zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
-        address buyToken = zeroForOne ? Currency.unwrap(key.currency1) : Currency.unwrap(key.currency0);
+        address sellToken = zeroForOne ? Currency.unwrap(poolKey.currency0) : Currency.unwrap(poolKey.currency1);
+        address buyToken = zeroForOne ? Currency.unwrap(poolKey.currency1) : Currency.unwrap(poolKey.currency0);
 
         //send sellToken to another position -> the hook should do internal accounting. Then when users want to claim using their 1155, the accounting logic will be applied
         
@@ -205,6 +190,50 @@ contract CoWHook is BaseHook, ERC1155 {
 
         //take token0 from position1 and send them to position2
         //take token1
+    }
+
+    function brevisCallback(bytes calldata callbackData) external {
+        //should return data about all the positions
+        //we check the order conditions (each order should have specified block number until which CoW can be executed)
+        //for the orders that didn't reach block limit, check if there is a matching order
+        //for the orders that reached block limit, execute them through AMM
+
+        //verify proof, by calling brevis handleProof function
+
+        //return just the matching orders, and read the rest from the storage
+
+        (PoolKey[] memory poolKey, 
+        int24[] memory tick, 
+        bool[] memory zeroForOne, 
+        uint256[] memory blockLimit, 
+        uint256[] memory amount, 
+        uint256[] memory matchedAmount, 
+        bytes memory proof) = abi.decode(callbackData, (PoolKey[], int24[], bool[], uint256[], uint256[], uint256[], bytes));
+        
+        if(poolKey.length != 0 && (poolKey.length != tick.length || poolKey.length == zeroForOne.length || poolKey.length == blockLimit.length || poolKey.length == amount.length)) {
+            revert BadCallbackData();
+        }
+
+        //try to execute each position
+        for(uint256 i = 0; i < poolKey.length; i++){
+            if(block.timestamp > blockLimit[i]){
+
+                // PoolKey calldata newPoolKey = PoolKey({
+                //     currency0: poolKey[i].currency0,
+                //     currency1: poolKey[i].currency1,
+                //     fee: poolKey[i].fee,
+                //     tickSpacing: poolKey[i].tickSpacing,
+                //     hooks: Hooks
+                // });
+                //execute regular AMM swap
+                executeAMMSwap(poolKey[i], tick[i], zeroForOne[i], amount[i], blockLimit[i]);
+            }else{
+                //check if there is a CoW matching order
+                if(matchedAmount[i] != 0){
+                    executeCoW(poolKey[i], zeroForOne[i], tick[i], blockLimit[i], matchedAmount[i]);
+                }
+            }
+        }
     }
 
     function swapAndSettleBalances(
@@ -257,7 +286,8 @@ contract CoWHook is BaseHook, ERC1155 {
         PoolKey calldata key,
         int24 tick,
         bool zeroForOne,
-        uint256 inputAmount
+        uint256 inputAmount,
+        uint256 blockLimit
     ) internal {
         // Do the actual swap and settle all balances
         BalanceDelta delta = swapAndSettleBalances(
@@ -274,8 +304,8 @@ contract CoWHook is BaseHook, ERC1155 {
         );
 
         // `inputAmount` has been deducted from this position
-        pendingOrders[key.toId()][tick][zeroForOne] -= inputAmount;
-        uint256 positionId = getPositionId(key, tick, zeroForOne);
+        pendingOrders[key.toId()][tick][zeroForOne][blockLimit] -= inputAmount;
+        uint256 positionId = getPositionId(key, tick, zeroForOne, blockLimit);
         uint256 outputAmount = zeroForOne
             ? uint256(int256(delta.amount1()))
             : uint256(int256(delta.amount0()));
@@ -288,10 +318,11 @@ contract CoWHook is BaseHook, ERC1155 {
         PoolKey calldata key,
         int24 tickToSellAt,
         bool zeroForOne,
-        uint256 inputAmountToClaimFor
+        uint256 inputAmountToClaimFor,
+        uint256 blockLimit
     ) external {
         int24 tick = getLowerUsableTick(tickToSellAt, key.tickSpacing);
-        uint256 positionId = getPositionId(key, tick, zeroForOne);
+        uint256 positionId = getPositionId(key, tick, zeroForOne, blockLimit);
 
         if(claimableOutputTokens[positionId] == 0) revert NothingToClaim();
     
