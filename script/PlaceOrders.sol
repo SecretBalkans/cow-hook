@@ -24,27 +24,17 @@ contract HookDeployer is Script {
 
     PoolKey key;
 
+    CoWHook hook = CoWHook(0x16206E4bc197A193755D35478e8F3BF6740C0088);
+
     function run() public {
         uint privateKey = vm.envUint("PRIVATE_KEY");
 
-        uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
-        );
-        console.log("Flags: ", flags);
-
-        address CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
-        (address hookAddress, bytes32 salt) = HookMiner.find(
-            CREATE2_DEPLOYER,
-            flags,
-            type(CoWHook).creationCode,
-            abi.encode(address(manager), "")
-        );
-
-        console.log("Hook pre mined address: ", hookAddress);
-
         vm.startBroadcast(privateKey);
-        MockERC20 tokenA = new MockERC20("Token0", "TK0", 18);
-        MockERC20 tokenB = new MockERC20("Token1", "TK1", 18);
+        MockERC20 tokenA = MockERC20(0x0c3A3aB1addc53281f0F7cc338E668D3EEe9149F);
+        MockERC20 tokenB = MockERC20(0x3a8511C697eedf6293c40BF7af46B6535fEF8384);
+
+        tokenA.approve(address(hook), type(uint256).max);
+        tokenB.approve(address(hook), type(uint256).max);
 
         if (address(tokenA) > address(tokenB)) {
             (token0, token1) = (
@@ -58,17 +48,6 @@ contract HookDeployer is Script {
             );
         }
 
-        tokenA.approve(address(swapRouter), type(uint256).max);
-        tokenB.approve(address(swapRouter), type(uint256).max);
-
-        tokenA.mint(msg.sender, 100 * 10 ** 18);
-        tokenB.mint(msg.sender, 100 * 10 ** 18);
-
-
-        CoWHook hook = new CoWHook{salt: salt}(manager, "");
-        console.log("CoWHook: ", address(hook));
-        // require(address(hook) == hookAddress, "hook address mismatch");
-
         key = PoolKey({
             currency0: token0,
             currency1: token1,
@@ -77,8 +56,7 @@ contract HookDeployer is Script {
             hooks: hook
         });
 
-        // the second argument here is SQRT_PRICE_1_1
-        manager.initialize(key, 79228162514264337593543950336, new bytes(0));
+        hook.placeOrder(key, 100, true, 0.001 ether, 10);
 
         vm.stopBroadcast();
     }

@@ -40,7 +40,7 @@ contract CoWHook is BaseHook, ERC1155 {
         uint256 inputAmount;
     }
 
-    mapping(PoolId poolId => mapping(int24 tickToSellAt => mapping(bool zeroForOne => mapping(uint256 blockLimit => uint256 inputAmount)))) pendingOrders;
+    mapping(PoolId poolId => mapping(int24 tickToSellAt => mapping(bool zeroForOne => mapping(uint256 blockLimit => uint256 inputAmount)))) public pendingOrders;
 
     mapping(uint256 positionId => uint256 claimsSupply) public claimTokensSupply;
 
