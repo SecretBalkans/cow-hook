@@ -56,7 +56,7 @@ contract HookDeployer is Script {
             hooks: hook
         });
 
-        hook.placeOrder(key, 100, true, 0.001 ether, 10);
+        hook.placeOrder(key, 100, false, 0.001 ether, 10);
 
         vm.stopBroadcast();
     }

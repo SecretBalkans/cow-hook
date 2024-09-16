@@ -121,6 +121,8 @@ contract CoWHookTest is Test, Deployers {
         bool zeroForOne = true;
         uint256 blockLimit = 10;
 
+        console.log("Current block: ", block.number);
+
         // Note the original balance of token0 we have
         uint256 originalBalance = token0.balanceOfSelf();
 

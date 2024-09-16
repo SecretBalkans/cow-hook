@@ -31,13 +31,11 @@ contract CoWHook is BaseHook, ERC1155 {
     error NothingToClaim();
     error NotEnoughToClaim();
     error BadCallbackData();
+    error NotOwner();
 
-    struct OrderData {
-        address user;
-        PoolKey poolKey;
-        int24 tick;
-        bool zeroForOne;
-        uint256 inputAmount;
+    modifier onlyBrevis() {
+        if(msg.sender != brevisAddress) revert NotBrevis();
+        _;
     }
 
     mapping(PoolId poolId => mapping(int24 tickToSellAt => mapping(bool zeroForOne => mapping(uint256 blockLimit => uint256 inputAmount)))) public pendingOrders;
@@ -45,6 +43,9 @@ contract CoWHook is BaseHook, ERC1155 {
     mapping(uint256 positionId => uint256 claimsSupply) public claimTokensSupply;
 
     mapping(uint256 positionId => uint256 outputClaimable) public claimableOutputTokens;
+
+    address public brevisAddress;
+    address public owner;
 
     function getPositionId(
         PoolKey calldata key,
@@ -58,8 +59,17 @@ contract CoWHook is BaseHook, ERC1155 {
 
     constructor(
         IPoolManager _manager,
-        string memory _uri
-    ) BaseHook(_manager) ERC1155(_uri) {}
+        string memory _uri,
+        address _brevisAddress
+    ) BaseHook(_manager) ERC1155(_uri) {
+        brevisAddress = _brevisAddress;
+        owner = msg.sender;
+    }
+
+    function setBrevisAddress(address _newBrevisAddress) external {
+        if (msg.sender != owner) revert NotOwner();
+        brevisAddress = _newBrevisAddress;
+    }
 
     function getHookPermissions()
         public
@@ -192,7 +202,7 @@ contract CoWHook is BaseHook, ERC1155 {
         //take token1
     }
 
-    function brevisCallback(bytes calldata callbackData) external {
+    function brevisCallback(bytes calldata callbackData) onlyBrevis external {
         //should return data about all the positions
         //we check the order conditions (each order should have specified block number until which CoW can be executed)
         //for the orders that didn't reach block limit, check if there is a matching order
