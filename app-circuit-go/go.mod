@@ -33,6 +33,7 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
+	github.com/holiman/uint256 v1.2.4 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/ingonyama-zk/icicle v0.1.1-0.20240120093837-db9eff751859 // indirect
 	github.com/ingonyama-zk/iciclegnark v0.1.2-0.20240120100015-8653136f9db4 // indirect
