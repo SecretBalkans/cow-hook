@@ -29,9 +29,17 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
         int24 tickToSellAt, 
         bool zeroForOne, 
         uint256 inputAmount,
-        uint160 sqrtPriceLimitX96,
+        uint160 sqrtPriceX96,
         uint256 expiryBlock
     );
+
+    //data for the CoW execution
+    //we exchange the claim tokens between the two positions, respecting matched amounts
+    struct SettleData {
+        uint256 positionId;
+        uint256 matchedAmount;
+        uint256 expired;
+    }
 
     struct PositionData {
         PoolKey key;
@@ -46,6 +54,13 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
     error NotEnoughToClaim();
     error BadCallbackData();
     error NotOwner();
+    error PositionNotExpired();
+
+    //modifiers
+    modifier onlyOwner() {
+        if(msg.sender != owner) revert NotOwner();
+        _;
+    }
 
     mapping(PoolId poolId => mapping(int24 tickToSellAt => mapping(bool zeroForOne => uint256 inputAmount))) public pendingOrders;
 
@@ -116,8 +131,9 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
         pendingOrders[key.toId()][tick][zeroForOne] += inputAmount;
         uint256 positionId = getPositionId(key, tick, zeroForOne);
         positionStartingBlock[positionId] = block.number;
-        expiryBlock[positionId] = block.number + blockLimit;
+        positionExpiryBlock[positionId] = block.number + blockLimit;
         positionData[positionId] = PositionData({
+            key: key,
             tick: tick,
             zeroForOne: zeroForOne,
             inputAmount: inputAmount
@@ -132,9 +148,9 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
             : Currency.unwrap(key.currency1);
         IERC20(sellToken).transferFrom(msg.sender, address(this), inputAmount);
 
-        uint160 sqrtPriceAtTick = TickMath.getSqrtRatioAtTick(tick);
+        uint160 sqrtPriceAtTick = tick.getSqrtPriceAtTick();
 
-        emit OrderPlaced(key, tick, zeroForOne, inputAmount, sqrtPriceAtTick, expiryBlock[positionId]);
+        emit OrderPlaced(positionId, key, tick, zeroForOne, inputAmount, sqrtPriceAtTick, positionExpiryBlock[positionId]);
 
         return tick;
     }
@@ -151,7 +167,7 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
         if (positionTokens == 0) revert InvalidOrder();
 
         pendingOrders[key.toId()][tick][zeroForOne] -= positionTokens;
-        expiryBlock[positionId] = 0;
+        positionExpiryBlock[positionId] = 0;
         positionStartingBlock[positionId] = 0;
 
         claimTokensSupply[positionId] -= positionTokens;
@@ -188,7 +204,7 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
         //preventing reentrancy. Is this needed?
         // if (sender == address(this)) return (this.beforeSwap.selector, BeforeSwapDelta.unwrap(0), 0);
 
-        (uint256 blockLimit, uint256 tickToSellAt) = abi.decode(data, (uint256, uint256));
+        (uint256 blockLimit, int24 tickToSellAt) = abi.decode(data, (uint256, int24));
         BeforeSwapDelta beforeSwapDelta;
         
         if(blockLimit > 0) {
@@ -232,7 +248,7 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
             //     );
             // }
             
-            placeOrder(poolKey, tickToSellAt, params.zeroForOne, params.amountSpecified, blockLimit);
+            placeOrder(poolKey, tickToSellAt, params.zeroForOne, uint256(params.amountSpecified), blockLimit);
         }
 
         return (this.beforeSwap.selector, beforeSwapDelta, 0);
@@ -247,24 +263,13 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
     //     return(this.afterSwap.selector, 0);
     // }
 
-    function executeCoW(PoolKey calldata poolKey, bool zeroForOne, int24 tick, uint256 matchedAmount) internal {
-        //remember that the hook has the custody over both tokens
-        
-        address sellToken = zeroForOne ? Currency.unwrap(poolKey.currency0) : Currency.unwrap(poolKey.currency1);
-        address buyToken = zeroForOne ? Currency.unwrap(poolKey.currency1) : Currency.unwrap(poolKey.currency0);
 
-        //send sellToken to another position -> the hook should do internal accounting. Then when users want to claim using their 1155, the accounting logic will be applied
-        
-        //we should se. the outputTokens for both positions. Need to calculate appropriate amounts using the tick
-        uint256 position1Id = getPositionId(poolKey, tick, zeroForOne);
-        uint256 position2Id = getPositionId(poolKey, tick, !zeroForOne);
+    function executeCoW(SettleData memory settleData) internal {
+        uint256 positionId = settleData.positionId;
+        uint256 matchedAmount = settleData.matchedAmount;
 
-        //how is the tick converted to price?
-        claimableOutputTokens[position1Id] += 0; //buyToken
-        claimableOutputTokens[position2Id] += 0; //sellToken
-
-        //take token0 from position1 and send them to position2
-        //take token1
+        //matched amount should be in the output currency
+        claimableOutputTokens[positionId] += matchedAmount;
     }
 
     function swapAndSettleBalances(
@@ -336,9 +341,9 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
 
         // `inputAmount` has been deducted from this position
         pendingOrders[key.toId()][tick][zeroForOne] -= inputAmount;
+        uint256 positionId = getPositionId(key, tick, zeroForOne);
         positionExpiryBlock[positionId] = 0;
         positionStartingBlock[positionId] = 0;
-        uint256 positionId = getPositionId(key, tick, zeroForOne);
         uint256 outputAmount = zeroForOne
             ? uint256(int256(delta.amount1()))
             : uint256(int256(delta.amount0()));
@@ -355,6 +360,9 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
     ) external {
         int24 tick = getLowerUsableTick(tickToSellAt, key.tickSpacing);
         uint256 positionId = getPositionId(key, tick, zeroForOne);
+
+        //position can be redeemed only after expiry
+        if(positionExpiryBlock[positionId] > block.number) revert PositionNotExpired();
 
         if(claimableOutputTokens[positionId] == 0) revert NothingToClaim();
     
@@ -378,6 +386,22 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
         token.transfer(msg.sender, outputAmount);
     }
 
+    function parseBytesToUint256Array(bytes memory data) public pure returns (uint256[] memory) {
+        require(data.length % 32 == 0, "Invalid input length");
+
+        uint256[] memory result = new uint256[](data.length / 32);
+
+        for (uint256 i = 0; i < result.length; i++) {
+            uint256 value;
+            assembly {
+                value := mload(add(data, add(32, mul(i, 32))))
+            }
+            result[i] = value;
+        }
+
+        return result;
+    }
+
     function handleProofResult(
         bytes32 _vkHash,
         bytes calldata _circuitOutput
@@ -391,60 +415,35 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
 
         //return just the matching orders, and read the rest from the storage
 
-        (
-            PoolKey[] memory poolKey,
-            int24[] memory tick,
-            bool[] memory zeroForOne,
-            uint256[] memory matchedAmount,
-            uint256 memory blockNumber,
-            bytes memory proof
-        ) = abi.decode(callbackData, (PoolKey[], int24[], bool[], uint256[], uint256, bytes));
-        
-        // if(poolKey.length != 0 && (poolKey.length != tick.length || poolKey.length == zeroForOne.length || poolKey.length == blockLimit.length || poolKey.length == amount.length)) {
-        //     revert BadCallbackData();
-        // }
+        (bytes memory settleData) = abi.decode(_circuitOutput, (bytes));
+
+        uint256[] memory result = parseBytesToUint256Array(settleData);
+
+        SettleData[50] memory matches;
+
+        uint256 j = 0;
+        // Use assembly to parse bytes into uint8 array
+        for (uint256 i = 0; i < result.length;) {
+            matches[j] = SettleData({
+                positionId: result[i],
+                matchedAmount: result[i+1],
+                expired: result[i+2]
+            });
+            i += 3;
+            j += 1;
+        }
 
         //TODO: Go over each position in the proof and execute CoW, which will remove it from positionExpiryBlock
 
         //try to execute each position
-        for(uint256 i = 0; i < poolKey.length; i++){
-            BalanceDelta delta;
-            
-            //TODO: for each expired postiion, execute the AMM swap only if it's not included in the proof
-            if(block.timestamp > positionExpiryBlock[]){
-
-                // PoolKey calldata newPoolKey = PoolKey({
-                //     currency0: poolKey[i].currency0,
-                //     currency1: poolKey[i].currency1,
-                //     fee: poolKey[i].fee,
-                //     tickSpacing: poolKey[i].tickSpacing,
-                //     hooks: Hooks
-                // });
-                //execute regular AMM swap
-                delta = executeAMMSwap(poolKey[i], tick[i], zeroForOne[i], amount[i]);
-            }else{
-                //check if there is a CoW matching order
-                if(matchedAmount[i] != 0){
-                    delta = executeCoW(poolKey[i], zeroForOne[i], tick[i], matchedAmount[i]);
-                }
-            }
-            settleBalances(poolKey[i], delta, zeroForOne[i]);
+        for(uint256 i = 0; i < matches.length; i++){
+            executeCoW(matches[i]);
         }
-
-        // We need to check if the verifying key that Brevis used to verify the 
-        // proof generated by our circuit is indeed the verifying key generated
-        // from compiling our app circuit. This ensures that the _circuitOutput 
-        // is authentic.
-        
-
-        (address minBlockNum, uint64 sum) = decodeOutput(_circuitOutput);
-        
-        // other logic that uses the proven data...
     }
 
     function settleBalances(
         PoolKey calldata key,
-        BalanceDelta calldata delta,
+        BalanceDelta delta,
         bool zeroForOne
     ) internal returns (BalanceDelta) {
         if (zeroForOne) {
