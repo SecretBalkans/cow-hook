@@ -12,11 +12,15 @@ Hook implements before swap function to intersect the swap and place CoW orders.
 If the orders are matched trades are executed p2p, without slippage.
 
 # Progress
-We implemented Brevis Cirtuit, which verifies the order matching algorithm.
+We implemented Brevis Cirtuit, which calculates in a verifiable way the order matching of same pool / same price / opposite trade positions and returns the amount they should be settled in the opposite token.
 
-We imagined to place order from beforeSwap hook, by using noop, but faced issues with claim token issuance (sender needs to be manager).
+This is a prerequisite to building a full solution that can work across several pairs which is a much more complex LinearProgramming problem (Maximum multicommodity flow) that will involve optimizing a matrix over many iterations - further insight into zk proofs and merkle proofs might be needed to produce a solution.
 
-Need to think of alternative solutions.
+In our circuit_test.go we implemented correct calls to the callback of our cowHook with inputs that represent (positions, matchingAmounts) which are settled by the hook contract. Settlement with BrevisRequest contract is implemented.
+
+We imagined to place order from beforeSwap hook, by using noop, but faced issues with claim token issuance (sender needs to be manager). Need to think of alternative solutions.
+
+Finally, when attempting to test the full solution we found an unfortunate bug where BrevisSdk.Filter doesn't filter out values when BrevisSdk.Map is called after (full details below). In our case this produces wrong calldata for our callback and that prevents us from testing the full case because incorrect matches are sent.
 
 ### Update: 00:15am Found a critical bug in Brevis sdk.Filter:
 #### Example 1
