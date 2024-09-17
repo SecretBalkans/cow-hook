@@ -32,8 +32,8 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
     event OrderPlaced(
         uint256 positionId,
         PoolKey key,
-        int24 tickToSellAt, 
-        bool zeroForOne, 
+        int24 tickToSellAt,
+        bool zeroForOne,
         uint256 inputAmount,
         uint160 sqrtPriceX96,
         uint256 expiryBlock,
@@ -153,7 +153,7 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
 
         uint160 sqrtPriceAtTick = tick.getSqrtPriceAtTick();
 
-        uint168 zeroForOneWithPrice = (1 << 160) + sqrtPriceAtTick;
+        uint168 zeroForOneWithPrice = (zeroForOne << 160) + sqrtPriceAtTick;
 
         emit OrderPlaced(positionId, key, tick, zeroForOne, inputAmount, sqrtPriceAtTick, positionExpiryBlock[positionId], zeroForOneWithPrice);
 
@@ -211,9 +211,9 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
 
         (uint256 blockLimit, int24 tickToSellAt) = abi.decode(data, (uint256, int24));
         BeforeSwapDelta beforeSwapDelta;
-        
+
         if(blockLimit > 0) {
-            
+
             //this will skip the core logic of the swap, by setting beforeSwapDelta to amountSpecified, which will make swapAmount 0 when added to params.specifiedAmount
             beforeSwapDelta = toBeforeSwapDelta(int128(-params.amountSpecified),int128(params.amountSpecified));
 
@@ -334,13 +334,13 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
         if(positionExpiryBlock[positionId] > block.number) revert PositionNotExpired();
 
         if(claimableOutputTokens[positionId] == 0) revert NothingToClaim();
-    
+
         uint256 positionTokens = balanceOf(msg.sender, positionId);
         if(positionTokens < inputAmountToClaimFor) revert NotEnoughToClaim();
 
         uint256 totalInputAmountForPosition = claimTokensSupply[positionId];
         uint256 totalClaimableForPosition = claimableOutputTokens[positionId];
-        
+
         uint256 outputAmount = inputAmountToClaimFor.mulDivDown(totalClaimableForPosition, totalInputAmountForPosition);
 
         //reduce the claimable output tokens amount
@@ -438,8 +438,8 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
     function decodeOutput(
         bytes calldata output
     ) internal pure returns (uint64, uint248) {
-        uint64 minBlockNum = uint64(bytes8(output[0:8])); 
-        uint248 sum = uint248(bytes31(output[8:8+31])); 
+        uint64 minBlockNum = uint64(bytes8(output[0:8]));
+        uint248 sum = uint248(bytes31(output[8:8+31]));
         return (minBlockNum, sum);
     }
 
