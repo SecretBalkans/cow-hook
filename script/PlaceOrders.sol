@@ -24,7 +24,7 @@ contract HookDeployer is Script {
 
     PoolKey key;
 
-    CoWHook hook = CoWHook(0x16206E4bc197A193755D35478e8F3BF6740C0088);
+    CoWHook hook = CoWHook(0xD5d40B49E10D033377B73e6F69f7dE0fDD918088);
 
     function run() public {
         uint privateKey = vm.envUint("PRIVATE_KEY");
@@ -56,7 +56,13 @@ contract HookDeployer is Script {
             hooks: hook
         });
 
+        hook.placeOrder(key, 100, true, 0.0001 ether, 10);
+
         hook.placeOrder(key, 100, false, 0.001 ether, 10);
+
+        hook.placeOrder(key, 150, false, 0.0002 ether, 11);
+
+        hook.placeOrder(key, 200, true, 0.0003 ether, 12);
 
         vm.stopBroadcast();
     }

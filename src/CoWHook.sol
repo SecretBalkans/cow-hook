@@ -16,6 +16,12 @@ import {FixedPointMathLib} from "solmate/src/utils/FixedPointMathLib.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {BrevisApp} from "./BrevisApp.sol";
 
+    struct SettleData {
+        uint256 positionId;
+        uint256 matchedAmount;
+        uint256 expired;
+    }
+
 contract CoWHook is BaseHook, ERC1155, BrevisApp {
     using StateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
@@ -30,16 +36,13 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
         bool zeroForOne, 
         uint256 inputAmount,
         uint160 sqrtPriceX96,
-        uint256 expiryBlock
+        uint256 expiryBlock,
+        uint168 zeroForOneWithPrice
     );
 
     //data for the CoW execution
     //we exchange the claim tokens between the two positions, respecting matched amounts
-    struct SettleData {
-        uint256 positionId;
-        uint256 matchedAmount;
-        uint256 expired;
-    }
+
 
     struct PositionData {
         PoolKey key;
@@ -150,7 +153,9 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
 
         uint160 sqrtPriceAtTick = tick.getSqrtPriceAtTick();
 
-        emit OrderPlaced(positionId, key, tick, zeroForOne, inputAmount, sqrtPriceAtTick, positionExpiryBlock[positionId]);
+        uint168 zeroForOneWithPrice = (1 << 160) + sqrtPriceAtTick;
+
+        emit OrderPlaced(positionId, key, tick, zeroForOne, inputAmount, sqrtPriceAtTick, positionExpiryBlock[positionId], zeroForOneWithPrice);
 
         return tick;
     }
@@ -212,42 +217,6 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
             //this will skip the core logic of the swap, by setting beforeSwapDelta to amountSpecified, which will make swapAmount 0 when added to params.specifiedAmount
             beforeSwapDelta = toBeforeSwapDelta(int128(-params.amountSpecified),int128(params.amountSpecified));
 
-            // //take the custody of the input tokens
-            // if (params.zeroForOne) {
-            //     // If user is selling Token 0 and buying Token 1
-
-            //     // They will be sending Token 0 to the PM, creating a debit of Token 0 in the PM
-            //     // We will take claim tokens for that Token 0 from the PM and keep it in the hook to create an equivalent credit for ourselves
-            //     poolKey.currency0.take(
-            //         poolManager,
-            //         address(this),
-            //         amountInOutPositive,
-            //         true
-            //     );
-
-            //     // They will be receiving Token 1 from the PM, creating a credit of Token 1 in the PM
-            //     // We will burn claim tokens for Token 1 from the hook so PM can pay the user
-            //     poolKey.currency1.settle(
-            //         poolManager,
-            //         address(this),
-            //         amountInOutPositive,
-            //         true
-            //     );
-            // } else {
-            //     poolKey.currency0.settle(
-            //         poolManager,
-            //         address(this),
-            //         amountInOutPositive,
-            //         true
-            //     );
-            //     poolKey.currency1.take(
-            //         poolManager,
-            //         address(this),
-            //         amountInOutPositive,
-            //         true
-            //     );
-            // }
-            
             placeOrder(poolKey, tickToSellAt, params.zeroForOne, uint256(params.amountSpecified), blockLimit);
         }
 
@@ -382,7 +351,7 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
         _burn(msg.sender, positionId, inputAmountToClaimFor);
 
         //transfer output tokens to the user
-        Currency token = zeroForOne ? key.currency0 : key.currency1;
+        Currency token = zeroForOne ? key.currency1 : key.currency0;
         token.transfer(msg.sender, outputAmount);
     }
 

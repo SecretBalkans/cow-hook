@@ -37,7 +37,7 @@ contract HookDeployer is Script {
             CREATE2_DEPLOYER,
             flags,
             type(CoWHook).creationCode,
-            abi.encode(address(manager), "", 0x16206E4bc197A193755D35478e8F3BF6740C0088)
+            abi.encode(address(manager), "", 0x841ce48F9446C8E281D3F1444cB859b4A6D0738C)
         );
 
         console.log("Hook pre mined address: ", hookAddress);
@@ -65,7 +65,7 @@ contract HookDeployer is Script {
         tokenB.mint(msg.sender, 100 * 10 ** 18);
 
 
-        CoWHook hook = new CoWHook{salt: salt}(manager, "", 0x16206E4bc197A193755D35478e8F3BF6740C0088);
+        CoWHook hook = new CoWHook{salt: salt}(manager, "", 0x841ce48F9446C8E281D3F1444cB859b4A6D0738C);
         console.log("CoWHook: ", address(hook));
         // require(address(hook) == hookAddress, "hook address mismatch");
 

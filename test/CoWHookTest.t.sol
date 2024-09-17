@@ -20,7 +20,7 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 
 // Our contracts
-import {CoWHook} from "../src/CoWHook.sol";
+import {CoWHook, SettleData} from "../src/CoWHook.sol";
 
 import "forge-std/console.sol";
 
@@ -29,6 +29,7 @@ contract CoWHookTest is Test, Deployers {
     using StateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
+    using TickMath for int24;
 
     // The two currencies (tokens) from the pool
     Currency token0;
@@ -50,7 +51,7 @@ contract CoWHookTest is Test, Deployers {
         address hookAddress = address(flags);
         deployCodeTo(
             "CoWHook.sol",
-            abi.encode(manager, ""),
+            abi.encode(manager, "", 0x16206E4bc197A193755D35478e8F3BF6740C0088),
             hookAddress
         );
         hook = CoWHook(hookAddress);
@@ -114,8 +115,11 @@ contract CoWHookTest is Test, Deployers {
 
     function test_placeOrder() public {
         // Place a zeroForOne take-profit order
-        // // for 10e18 token0 tokens
-        // // at tick 100
+        // for 10e18 token0 tokens
+        // at tick 100
+
+        // console.log("Token0 address: ", address(Currency.unwrap(token0)));
+        // console.log("Token1 address: ", address(Currency.unwrap(token1)));
         // int24 tick = 100;
         // uint256 amount = 10e18;
         // bool zeroForOne = true;
@@ -127,7 +131,12 @@ contract CoWHookTest is Test, Deployers {
         // uint256 originalBalance = token0.balanceOfSelf();
 
         // // Place the order
-        // int24 tickLower = hook.placeOrder(key, tick, zeroForOne, amount);
+        // int24 tickLower = hook.placeOrder(key, tick, zeroForOne, amount, blockLimit);
+        // int24 tickLowerSame = hook.placeOrder(key, tick, zeroForOne, amount, blockLimit);
+        // int24 tickLower2 = hook.placeOrder(key, tick, !zeroForOne, 2*amount, blockLimit);
+
+        // console.log("Balance of token0: ", token0.balanceOf(address(hook)));
+        // console.log("Balance of token1: ", token1.balanceOf(address(hook)));
 
         // // Note the new balance of token0 we have
         // uint256 newBalance = token0.balanceOfSelf();
@@ -138,16 +147,115 @@ contract CoWHookTest is Test, Deployers {
         // assertEq(tickLower, 60);
 
         // // Ensure that our balance of token0 was reduced by `amount` tokens
-        // assertEq(originalBalance - newBalance, amount);
+        // assertEq(originalBalance - newBalance, amount*2);
 
         // // Check the balance of ERC-1155 tokens we received
         // uint256 positionId = hook.getPositionId(key, tickLower, zeroForOne);
         // uint256 tokenBalance = hook.balanceOf(address(this), positionId);
 
+        // uint160 price = tickLower.getSqrtPriceAtTick();
+        
+        // //print all of the below line
+
+        // uint256 matchedAmount = (amount * price) / (2**96);
+        // console.log(matchedAmount);
+        // console.log(amount);
+        // console.log(price);
+
+        // uint256 claimableOutputTokensBefore = hook.claimableOutputTokens(positionId);
+        // console.log("Claimable output tokens before: ", claimableOutputTokensBefore);
+
+        // hook.executeCoW(SettleData({
+        //     positionId: positionId,
+        //     matchedAmount: matchedAmount,
+        //     expired: 0
+        // }));
+
+        // uint256 claimableOutputTokensAfter = hook.claimableOutputTokens(positionId);
+        // console.log("Claimable output tokens after: ", claimableOutputTokensAfter);
+
+        // assertEq(claimableOutputTokensAfter, claimableOutputTokensBefore + matchedAmount);
         // // Ensure that we were, in fact, given ERC-1155 tokens for the order
+
+        // vm.roll(block.number + 1000);
+
+        // console.log("Claim tokens supply: ", hook.claimTokensSupply(positionId));
+
+        // hook.redeem(
+        //     key,
+        //     tickLower,
+        //     zeroForOne,
+        //     amount
+        // );
+
+        // uint256 claimableOutputTokensAfterRedeem = hook.claimableOutputTokens(positionId);
+        // console.log("Claimable output tokens after redeem: ", claimableOutputTokensAfterRedeem);
+
+        // assertEq(claimableOutputTokensAfterRedeem, matchedAmount/2);
+
         // // equal to the `amount` of token0 tokens we placed the order for
         // assertTrue(positionId != 0);
-        // assertEq(tokenBalance, amount);
+        // assertEq(tokenBalance, amount*2);
+    }
+
+    function test_executeCoW() public {
+        // Place a zeroForOne take-profit order
+        // for 10e18 token0 tokens
+        // at tick 100
+        int24 tick = 100;
+        uint256 amount = 10e18;
+        bool zeroForOne = true;
+        uint256 blockLimit = 10;
+
+        console.log("Current block: ", block.number);
+
+        // Note the original balance of token0 we have
+        uint256 originalBalance = token0.balanceOfSelf();
+
+        // Place the order
+        int24 tickLower = hook.placeOrder(key, tick, zeroForOne, amount, blockLimit);
+
+        // Note the new balance of token0 we have
+        uint256 newBalance = token0.balanceOfSelf();
+
+        // Since we deployed the pool contract with tick spacing = 60
+        // i.e. the tick can only be a multiple of 60
+        // the tickLower should be 60 since we placed an order at tick 100
+        assertEq(tickLower, 60);
+
+        // Ensure that our balance of token0 was reduced by `amount` tokens
+        assertEq(originalBalance - newBalance, amount);
+
+        // Check the balance of ERC-1155 tokens we received
+        uint256 positionId = hook.getPositionId(key, tickLower, zeroForOne);
+        uint256 tokenBalance = hook.balanceOf(address(this), positionId);
+
+        // Ensure that we were, in fact, given ERC-1155 tokens for the order
+        // equal to the `amount` of token0 tokens we placed the order for
+        assertTrue(positionId != 0);
+        assertEq(tokenBalance, amount);
+    }
+
+    function test_beforeSwap() public {
+        int24 tick = -100;
+        uint256 amount = 10 ether;
+        bool zeroForOne = false;
+        uint256 blockLimit = 10;
+
+        // Place our order at tick -100 for 10e18 token1 tokens
+        // int24 tickLower = hook.placeOrder(key, tick, zeroForOne, amount, blockLimit);
+
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -1 ether,
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+
+        PoolSwapTest.TestSettings memory testSettings = PoolSwapTest
+            .TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        swapRouter.swap(key, params, testSettings, abi.encode(blockLimit, tick));
+
     }
 
     function onERC1155Received(
