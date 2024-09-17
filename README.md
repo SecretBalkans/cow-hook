@@ -1,66 +1,21 @@
-## Foundry
+# Introduction
+CoW hook uses smart indexing engine, which is able to match existing orders if there is a Coincidence of Wants. In order to achieve end-to-end trustless flow, it uses Brevis as a verifiability layer. If there is no CoW after certain blocks (specified by user), trade will be executed through AMM regularly.
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+# Test
+To test the hook locally run: `forge test --via-ir`
 
-Foundry consists of:
+# Architecture
+CoWHook solution consists of hook smart contract and Brevis Circuit for order matching.
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+Hook implements before swap function to intersect the swap and place CoW orders.
 
-## Documentation
+If the orders are matched trades are executed p2p, without slippage.
 
-https://book.getfoundry.sh/
+# Progress
+We implemented Brevis Cirtuit, which verifies the order matching algorithm.
 
-## Usage
+We imagined to place order from beforeSwap hook, by using noop, but faced issues with claim token issuance (sender needs to be manager).
 
-### Build
+Need to think of alternative solutions.
 
-```shell
-$ forge build
-```
 
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
