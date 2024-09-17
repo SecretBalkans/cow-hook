@@ -16,7 +16,6 @@ import (
 	"github.com/brevis-network/brevis-sdk/sdk/proto/gwproto"
 	"github.com/brevis-network/brevis-sdk/test"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -24,13 +23,15 @@ func TestCircuit(t *testing.T) {
 	app, err := sdk.NewBrevisApp()
 	check(err)
 
-	ec, err := ethclient.Dial("https://sepolia.infura.io/v3/6f3271b349f74f9487b77b5a51174e18")
+	sepoliaRPCUrl := os.Getenv("SEPOLIA_RPC")
+	fmt.Printf("env.SEPOLIA_RPC: %s\n", sepoliaRPCUrl)
+	ec, err := ethclient.Dial(sepoliaRPCUrl)
 	check(err)
 
-	addOrderFromTxEvents(err, ec, common.HexToHash("0x61ab4658f8a7adb273afc99810333eab95a88a69010f51b235b6763f756ca396"), app)
-	addOrderFromTxEvents(err, ec, common.HexToHash("0xf2255e73221ecdd54f041b0f7812ee28f1ff7116170b9fe39c8a628fa3c2fecc"), app)
-	addOrderFromTxEvents(err, ec, common.HexToHash("0xa2b6a3ac31aa51ebd60d56ff05bd44d4967980147c69beeb50eb6d3d1714c007"), app)
-	addOrderFromTxEvents(err, ec, common.HexToHash("0x7a3de8732574917997772f4545a065bdca8b5c3e8f856bdac26365b9f2f32b0f"), app)
+	addOrderFromTxEvents(ec, common.HexToHash("0xdecec8a846217ec5c15ea1df1a4215b8e6e4500c710d5be9b8fbf9681ba4e807"), app)
+	addOrderFromTxEvents(ec, common.HexToHash("0x502860088fe4c8354210b43f59c67aa8896538624fcadb7966a5318fd0228602"), app)
+	addOrderFromTxEvents(ec, common.HexToHash("0x7c56e53ca1c56539b52b03f31879eb3b3c0a1f8be6e4211441d64987a1a4291c"), app)
+	addOrderFromTxEvents(ec, common.HexToHash("0x145859d59ceccb210309ff99a47b0092140e61698ac1fce68546125f6c1f0aa1"), app)
 	//txHash1 := common.HexToHash("0x5f01a517902cdaa49dfb980e7b619474106a455bc7aedc91246d5ee6e3d5c21e")
 	//addOrderFromTxEvents(err, ec, txHash1, app)
 	appCircuit := &AppCircuit{}
@@ -47,7 +48,7 @@ func TestCircuit(t *testing.T) {
 	test.ProverSucceeded(t, appCircuit, appCircuitAssignment, circuitInput)
 }
 
-func addOrderFromTxEvents(err error, ec *ethclient.Client, txHash common.Hash, app *sdk.BrevisApp) {
+func addOrderFromTxEvents(ec *ethclient.Client, txHash common.Hash, app *sdk.BrevisApp) {
 	orderReceipt, err := ec.TransactionReceipt(context.Background(), txHash)
 	check(err)
 
@@ -98,35 +99,26 @@ func TestE2E(t *testing.T) {
 	app, err := sdk.NewBrevisApp()
 	check(err)
 
-	txHash := common.HexToHash(
-		"0x6dc75e61220cc775aafa17796c20e49ac08030020fce710e3e546aa4e003454c")
+	//txHash :=
 
-	ethRPCUrl := os.Getenv("ETH_RPC")
-	fmt.Printf("env.ETH_RPC: %s\n", ethRPCUrl)
-	ethDial, err := ethclient.Dial(ethRPCUrl)
+	//ethRPCUrl := os.Getenv("ETH_RPC")
+	//fmt.Printf("env.ETH_RPC: %s\n", ethRPCUrl)
+	//ethDial, err := ethclient.Dial(ethRPCUrl)
 	sepoliaRPCUrl := os.Getenv("SEPOLIA_RPC")
 	fmt.Printf("env.SEPOLIA_RPC: %s\n", sepoliaRPCUrl)
 	ec, err := ethclient.Dial(sepoliaRPCUrl)
 	check(err)
-	tx, _, err := ethDial.TransactionByHash(context.Background(), txHash)
-	check(err)
-	receipt, err := ethDial.TransactionReceipt(context.Background(), txHash)
-	check(err)
-	from, err := types.Sender(types.NewLondonSigner(tx.ChainId()), tx)
-	check(err)
+	//tx, _, err := ethDial.TransactionByHash(context.Background(), txHash)
+	//check(err)
+	//receipt, err := ethDial.TransactionReceipt(context.Background(), txHash)
+	//check(err)
+	//from, err := types.Sender(types.NewLondonSigner(tx.ChainId()), tx)
+	//check(err)
 
-	app.AddTransaction(sdk.TransactionData{
-		Hash:                txHash,
-		ChainId:             tx.ChainId(),
-		BlockNum:            receipt.BlockNumber,
-		Nonce:               tx.Nonce(),
-		GasTipCapOrGasPrice: tx.GasTipCap(),
-		GasFeeCap:           tx.GasFeeCap(),
-		GasLimit:            tx.Gas(),
-		From:                from,
-		To:                  *tx.To(),
-		Value:               tx.Value(),
-	})
+	addOrderFromTxEvents(ec, common.HexToHash("0xdecec8a846217ec5c15ea1df1a4215b8e6e4500c710d5be9b8fbf9681ba4e807"), app)
+	addOrderFromTxEvents(ec, common.HexToHash("0x502860088fe4c8354210b43f59c67aa8896538624fcadb7966a5318fd0228602"), app)
+	addOrderFromTxEvents(ec, common.HexToHash("0x7c56e53ca1c56539b52b03f31879eb3b3c0a1f8be6e4211441d64987a1a4291c"), app)
+	addOrderFromTxEvents(ec, common.HexToHash("0x145859d59ceccb210309ff99a47b0092140e61698ac1fce68546125f6c1f0aa1"), app)
 
 	appCircuit := &AppCircuit{}
 	appCircuitAssignment := &AppCircuit{}
@@ -249,7 +241,7 @@ func TestE2E(t *testing.T) {
 	copy(proofArray32[:], proofData[:32])
 
 	refundeeAddress := common.HexToAddress("0xae4976143Cd0886ce6d5347BC53C7890Cbd401B6") // Replace with refundee address
-	callbackAddress := common.HexToAddress("0x07385489Bb7dC767e0270e548dB98816b004C088") // CoWHookMock Sepolia address
+	callbackAddress := common.HexToAddress("0xCb955eBfAB9b1b2ACB54310E34678bDE8B4b0088") // CoWHookMock Sepolia address
 
 	// Constructing Callback struct
 	callback := IBrevisTypesCallback{

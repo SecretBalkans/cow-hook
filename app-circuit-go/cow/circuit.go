@@ -92,12 +92,16 @@ func (c *AppCircuit) Define(api *sdk.CircuitAPI, input sdk.DataInput) error {
 			//fmt.Println("inputAmount", api.ToUint248(receiptToMap.Fields[1].Value).Val)
 			//fmt.Println("expiry", api.ToUint248(receiptToMap.Fields[2].Value).Val)
 
-			sqrtPrice0To1, _, _ := c.getZeroForOneSqrtPriceX96(api, receiptToMap.Fields[3].Value)
-			//fmt.Println("sqrtPrice0To1", sqrtPrice0To1, "zeroToOne", zeroToOne)
+			sqrtPrice0To1, zeroToOne, _ := c.getZeroForOneSqrtPriceX96(api, receiptToMap.Fields[3].Value)
+			fmt.Println("sqrtPrice0To1", sqrtPrice0To1, "zeroToOne", zeroToOne)
 			return sqrtPrice0To1
 		})
-
-	sdk.Map(priceAccumulatorDS, func(priceAccToMatch PriceAcc) sdk.Uint248 {
+	priceAccumulatorDS.Show()
+	filtered := sdk.Filter(priceAccumulatorDS, func(current PriceAcc) sdk.Uint248 {
+		return u248.Not(u248.IsZero(current.F2)) // HACK: bugfix 0 price PriceAcc entering the map
+	})
+	filtered.Show()
+	sdk.Map(filtered, func(priceAccToMatch PriceAcc) sdk.Uint248 {
 		inputAmount0 := priceAccToMatch.F0
 		inputAmount1 := priceAccToMatch.F1
 		sqrtPrice0To1 := priceAccToMatch.F2
