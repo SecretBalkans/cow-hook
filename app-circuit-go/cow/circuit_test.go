@@ -27,8 +27,30 @@ func TestCircuit(t *testing.T) {
 	ec, err := ethclient.Dial("https://sepolia.infura.io/v3/6f3271b349f74f9487b77b5a51174e18")
 	check(err)
 
-	orderReceipt, err := ec.TransactionReceipt(context.Background(), common.HexToHash("0x5f01a517902cdaa49dfb980e7b619474106a455bc7aedc91246d5ee6e3d5c21e"))
+	addOrderFromTxEvents(err, ec, common.HexToHash("0x61ab4658f8a7adb273afc99810333eab95a88a69010f51b235b6763f756ca396"), app)
+	addOrderFromTxEvents(err, ec, common.HexToHash("0xf2255e73221ecdd54f041b0f7812ee28f1ff7116170b9fe39c8a628fa3c2fecc"), app)
+	addOrderFromTxEvents(err, ec, common.HexToHash("0xa2b6a3ac31aa51ebd60d56ff05bd44d4967980147c69beeb50eb6d3d1714c007"), app)
+	addOrderFromTxEvents(err, ec, common.HexToHash("0x7a3de8732574917997772f4545a065bdca8b5c3e8f856bdac26365b9f2f32b0f"), app)
+	//txHash1 := common.HexToHash("0x5f01a517902cdaa49dfb980e7b619474106a455bc7aedc91246d5ee6e3d5c21e")
+	//addOrderFromTxEvents(err, ec, txHash1, app)
+	appCircuit := &AppCircuit{}
+	appCircuitAssignment := &AppCircuit{}
+
+	circuitInput, err := app.BuildCircuitInput(appCircuit)
 	check(err)
+
+	///////////////////////////////////////////////////////////////////////////////
+	// Testing
+	///////////////////////////////////////////////////////////////////////////////
+
+	//test.IsSolved(t, appCircuit, appCircuitAssignment, circuitInput)
+	test.ProverSucceeded(t, appCircuit, appCircuitAssignment, circuitInput)
+}
+
+func addOrderFromTxEvents(err error, ec *ethclient.Client, txHash common.Hash, app *sdk.BrevisApp) {
+	orderReceipt, err := ec.TransactionReceipt(context.Background(), txHash)
+	check(err)
+
 	orderLog := orderReceipt.Logs[2]
 	orderData := orderReceipt.Logs[2].Data
 
@@ -45,66 +67,31 @@ func TestCircuit(t *testing.T) {
 	blockLimit := new(big.Int).SetBytes(orderData[256:288]).Int64()
 	check(err)*/
 
+	/* NEW
+	   event OrderPlaced(
+	       uint256 positionId, // 0 (32 bytes)
+	       PoolKey key, // 1
+	       int24 tickToSellAt, // 2
+	       bool zeroForOne, // 3
+	       uint256 inputAmount, // 4
+	       uint256 expiryBlock // 5
+	       uint160 zeroForOneWithSqrtPriceX96, //6 (21bytes)
+	   );
+	*/
 	app.AddReceipt(sdk.ReceiptData{
 		BlockNum: orderReceipt.BlockNumber,
 		TxHash:   orderReceipt.TxHash,
-		Fields: [4]sdk.LogFieldData{
-			//{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 0, Value: common.BytesToHash(orderData[0:32])},
-			//{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 1, Value: common.BytesToHash(orderData[0:32])},
-			//tickSellAt
-			{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 5, Value: common.BytesToHash(orderData[160:192])},
-			//zeroToOne
-			{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 6, Value: common.BytesToHash(orderData[192:224])},
-			//inputAmount
-			{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 7, Value: common.BytesToHash(orderData[224:256])},
+		Fields: [sdk.NumMaxLogFields]sdk.LogFieldData{
+			// positionId
+			{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 0, Value: common.BytesToHash(orderData[0:32])},
+			// inputAmount
+			{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 8, Value: common.BytesToHash(orderData[256:288])},
+			// expiryBlock
+			{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 10, Value: common.BytesToHash(orderData[320:352])},
+			// [zeroToOne, sqrtPriceX96]
+			{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 11, Value: common.BytesToHash(orderData[352:384])},
 		},
 	})
-
-	orderReceipt1, err := ec.TransactionReceipt(context.Background(), common.HexToHash("0x5f01a517902cdaa49dfb980e7b619474106a455bc7aedc91246d5ee6e3d5c21e"))
-	check(err)
-	orderLog1 := orderReceipt1.Logs[2]
-	orderData1 := orderReceipt1.Logs[2].Data
-
-	/*fromToken := hexutils.BytesToHex(orderData[0:32])
-	toToken := hexutils.BytesToHex(orderData[32:64])
-	//feeRaw := orderData[64:96]
-	//tickSpacingRaw := orderData[96:128]
-	//hookAddressRaw := orderData[128:160]
-	tickSellAt := new(big.Int).SetBytes(orderData[160:192]).Int64()
-	zeroToOne := new(big.Int).SetBytes(orderData[192:224]).Int64()
-	check(err)
-	inputAmount := new(big.Int).SetBytes(orderData[224:256]).Int64()
-	check(err)
-	blockLimit := new(big.Int).SetBytes(orderData[256:288]).Int64()
-	check(err)*/
-
-	app.AddReceipt(sdk.ReceiptData{
-		BlockNum: orderReceipt.BlockNumber,
-		TxHash:   orderReceipt.TxHash,
-		Fields: [4]sdk.LogFieldData{
-			//{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 0, Value: common.BytesToHash(orderData[0:32])},
-			//{Contract: orderLog.Address, LogIndex: orderLog.Index, EventID: orderLog.Topics[0], IsTopic: false, FieldIndex: 1, Value: common.BytesToHash(orderData[0:32])},
-			//tickSellAt
-			{Contract: orderLog1.Address, LogIndex: orderLog1.Index, EventID: orderLog1.Topics[0], IsTopic: false, FieldIndex: 5, Value: common.BytesToHash(orderData1[160:192])},
-			//zeroToOne
-			{Contract: orderLog1.Address, LogIndex: orderLog1.Index, EventID: orderLog1.Topics[0], IsTopic: false, FieldIndex: 6, Value: common.BytesToHash(orderData1[192:224])},
-			//inputAmount
-			{Contract: orderLog1.Address, LogIndex: orderLog1.Index, EventID: orderLog1.Topics[0], IsTopic: false, FieldIndex: 7, Value: common.BytesToHash(orderData1[224:256])},
-		},
-	})
-
-	appCircuit := &AppCircuit{}
-	appCircuitAssignment := &AppCircuit{}
-
-	circuitInput, err := app.BuildCircuitInput(appCircuit)
-	check(err)
-
-	///////////////////////////////////////////////////////////////////////////////
-	// Testing
-	///////////////////////////////////////////////////////////////////////////////
-
-	//test.IsSolved(t, appCircuit, appCircuitAssignment, circuitInput)
-	test.ProverSucceeded(t, appCircuit, appCircuitAssignment, circuitInput)
 }
 
 func TestE2E(t *testing.T) {
@@ -262,7 +249,7 @@ func TestE2E(t *testing.T) {
 	copy(proofArray32[:], proofData[:32])
 
 	refundeeAddress := common.HexToAddress("0xae4976143Cd0886ce6d5347BC53C7890Cbd401B6") // Replace with refundee address
-	callbackAddress := common.HexToAddress("0xD9A4fE38CC031Cfac4eE7C4319dFd3901AdD14BD") // CoWHookMock Sepolia address
+	callbackAddress := common.HexToAddress("0x07385489Bb7dC767e0270e548dB98816b004C088") // CoWHookMock Sepolia address
 
 	// Constructing Callback struct
 	callback := IBrevisTypesCallback{
