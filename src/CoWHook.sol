@@ -123,13 +123,13 @@ contract CoWHook is BaseHook, ERC1155, BrevisApp {
             });
     }
 
-    /**
+    /** // TODO: make public after we fix placeOrdering on swap logic
         * @param key - Key of the pool
         * @param tickToSellAt - Tick at which we want to execute order
         * @param zeroForOne - direction of the swap
         * @param inputAmount - swap amount
      */
-    function placeOrder(PoolKey calldata key, int24 tickToSellAt, bool zeroForOne, uint256 inputAmount, uint256 blockLimit) public returns (int24){
+    function placeOrder(PoolKey calldata key, int24 tickToSellAt, bool zeroForOne, uint256 inputAmount, uint256 blockLimit) internal returns (int24){
         int24 tick = getLowerUsableTick(tickToSellAt, key.tickSpacing);
         pendingOrders[key.toId()][tick][zeroForOne] += inputAmount;
         uint256 positionId = getPositionId(key, tick, zeroForOne);
