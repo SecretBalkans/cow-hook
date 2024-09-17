@@ -85,21 +85,22 @@ func (c *AppCircuit) Define(api *sdk.CircuitAPI, input sdk.DataInput) error {
 		F0: sdk.ConstUint248(0),
 		F1: sdk.ConstUint248(0),
 		F2: sdk.ConstUint248(0),
-	},
-		func(receiptToMap sdk.Receipt) sdk.Uint248 {
-			//position := api.ToBytes32(receiptToMap.Fields[0].Value)
-			//fmt.Println("positionId", position.Val)
-			//fmt.Println("inputAmount", api.ToUint248(receiptToMap.Fields[1].Value).Val)
-			//fmt.Println("expiry", api.ToUint248(receiptToMap.Fields[2].Value).Val)
+	}, func(receiptToMap sdk.Receipt) sdk.Uint248 {
+		//position := api.ToBytes32(receiptToMap.Fields[0].Value)
+		//fmt.Println("positionId", position.Val)
+		//fmt.Println("inputAmount", api.ToUint248(receiptToMap.Fields[1].Value).Val)
+		//fmt.Println("expiry", api.ToUint248(receiptToMap.Fields[2].Value).Val)
 
-			sqrtPrice0To1, zeroToOne, _ := c.getZeroForOneSqrtPriceX96(api, receiptToMap.Fields[3].Value)
-			fmt.Println("sqrtPrice0To1", sqrtPrice0To1, "zeroToOne", zeroToOne)
-			return sqrtPrice0To1
-		})
+		sqrtPrice0To1, zeroToOne, _ := c.getZeroForOneSqrtPriceX96(api, receiptToMap.Fields[3].Value)
+		fmt.Println("sqrtPrice0To1", sqrtPrice0To1, "zeroToOne", zeroToOne)
+		return sqrtPrice0To1
+	})
+	fmt.Println("priceAccumulatorDS")
 	priceAccumulatorDS.Show()
 	filtered := sdk.Filter(priceAccumulatorDS, func(current PriceAcc) sdk.Uint248 {
-		return u248.Not(u248.IsZero(current.F2)) // HACK: bugfix 0 price PriceAcc entering the map
+		return u248.IsGreaterThan(current.F2, sdk.ConstUint248(0)) // HACK: bugfix 0 price PriceAcc entering the map
 	})
+	fmt.Println("priceAccumulatorDS(>1)")
 	filtered.Show()
 	sdk.Map(filtered, func(priceAccToMatch PriceAcc) sdk.Uint248 {
 		inputAmount0 := priceAccToMatch.F0
@@ -122,17 +123,20 @@ func (c *AppCircuit) Define(api *sdk.CircuitAPI, input sdk.DataInput) error {
 			_, _, sqrtPriceVal := c.getZeroForOneSqrtPriceX96(api, current.Fields[3].Value)
 			return u248.IsEqual(priceAccToMatch.F2, sqrtPriceVal)
 		})
+		// This Filter doesn't work either
+		ordersAtPrice.Show()
 		sdk.Map(ordersAtPrice,
 			func(current sdk.Receipt) sdk.Uint248 {
+				fmt.Println("Receipt found!")
 				_, zeroForOne, _ := c.getZeroForOneSqrtPriceX96(api, current.Fields[3].Value)
 				matchAmount := u248.Select(zeroForOne, matchAmount0, matchAmount1)
 				expired := sdk.ConstUint248(0)
-				fmt.Println("positionId", current.Fields[0].Value)
+				//fmt.Println("positionId", current.Fields[0].Value)
 				api.OutputBytes32(current.Fields[0].Value)
 				api.OutputUint(248, matchAmount)
-				fmt.Println("matchAmount", matchAmount)
+				//fmt.Println("matchAmount", matchAmount)
 				api.OutputUint(248, expired)
-				fmt.Println("expired", expired)
+				//fmt.Println("expired", expired)
 				return sdk.ConstUint248(0)
 			})
 		return sdk.ConstUint248(0)
